@@ -1,0 +1,11 @@
+{
+  "name": "herdr-hc-attach",
+  "version": "0.1.0",
+  "description": "herdr plugin: open live herdr-core (hc) terminals as herdr panes",
+  "author": "barnuri",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": { "node": ">=22.0.0" },
+  "scripts": { "test": "node --test \"tests/*.test.js\"" },
+  "keywords": ["herdr", "herdr-plugin", "hc", "herdr-core", "terminal"]
+}

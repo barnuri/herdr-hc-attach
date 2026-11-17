@@ -1,0 +1,30 @@
+id = "barnuri.hc-attach"
+name = "hc attach"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Open live herdr-core (hc) terminals as herdr panes: attach, watch view-only, or attach all"
+platforms = ["linux", "macos"]
+
+[[panes]]
+id = "picker"
+title = "hc terminals"
+command = ["node", "bin/picker.js"]
+placement = "popup"
+
+[[actions]]
+id = "attach"
+title = "hc: attach a terminal"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/open.js", "attach"]
+
+[[actions]]
+id = "watch"
+title = "hc: watch a terminal"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/open.js", "watch"]
+
+[[actions]]
+id = "attach-all"
+title = "hc: attach all"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/open.js", "all"]
