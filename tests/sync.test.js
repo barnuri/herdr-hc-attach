@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { appPlaceFor, holdPane, isAutoTabLabel, nameDirection, placeForPane, normalizeState, parseAppLs, parseTui, planSync, stripNumber, syncedRunArgv } = require('../lib/sync');
+const { appPlaceFor, holdPane, isAutoTabLabel, nameDirection, paneAgents, placeForPane, normalizeState, parseAppLs, parseTui, planSync, stripNumber, syncedRunArgv } = require('../lib/sync');
 
 const appJson = (spaces) => JSON.stringify({ spaces, recent: [] });
 const space = (id, name, tabs, machine = null) => ({ id, name, folder: '/tmp', machine, tabs });
@@ -27,9 +27,20 @@ test('parseAppLs keeps local spaces, tabs and valid addresses', () => {
     space('spR', 'remote', [tab('tb9', '1', ['t9'])], 'vps'),
   ]));
   assert.deepEqual(spaces, [{ spaceId: 'spA', name: 'repo', folder: '/tmp', tabs: [
-    { tabId: 'tb1', name: '1', terminals: ['t1'] },
-    { tabId: 'tb2', name: 'fix', terminals: [] },
+    { tabId: 'tb1', name: '1', terminals: ['t1'], agents: {} },
+    { tabId: 'tb2', name: 'fix', terminals: [], agents: {} },
   ] }]);
+});
+
+test('paneAgents maps the app agent of each terminal, unknown when the status is not a herdr state', () => {
+  const withAgents = (agents) => ({ id: 'tb1', name: '1', terminals: Object.keys(agents).map((t) => ({ terminal: t, pane: `p-${t}`, ...agents[t] })) });
+  const spaces = parseAppLs(appJson([space('spA', 'repo', [
+    withAgents({ t1: { app: 'opencode', status: 'working' }, t2: { app: 'claude', status: null }, t3: { app: null, status: null } }),
+  ])]));
+  const agents = paneAgents(spaces);
+  assert.deepEqual(agents.get('t1'), { agent: 'opencode', state: 'working' });
+  assert.deepEqual(agents.get('t2'), { agent: 'claude', state: 'unknown' });
+  assert.equal(agents.has('t3'), false);
 });
 
 test('parseAppLs rejects non-JSON and a missing spaces array', () => {
