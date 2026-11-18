@@ -35,6 +35,18 @@ title = "hc: new synced terminal (shows in the herdr app)"
 contexts = ["workspace", "pane"]
 command = ["node", "bin/new-synced.js"]
 
+[[actions]]
+id = "convert"
+title = "hc: convert panes to synced (shows them in the herdr app)"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/convert.js"]
+
+[[panes]]
+id = "convert"
+title = "hc: convert panes to synced"
+command = ["node", "bin/convert.js"]
+placement = "popup"
+
 [[panes]]
 id = "confirm-close"
 title = "hc: synced panes closed"

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { appPlaceFor, normalizeState, parseAppLs, parseTui, planSync, stripNumber, syncedRunArgv } = require('../lib/sync');
+const { appPlaceFor, isAutoTabLabel, nameDirection, placeForPane, normalizeState, parseAppLs, parseTui, planSync, stripNumber, syncedRunArgv } = require('../lib/sync');
 
 const appJson = (spaces) => JSON.stringify({ spaces, recent: [] });
 const space = (id, name, tabs, machine = null) => ({ id, name, folder: '/tmp', machine, tabs });
@@ -18,6 +18,8 @@ function tuiView({ workspaces = {}, tabs = {}, panes = {} } = {}) {
 }
 
 const types = (ops) => ops.map((op) => op.type);
+// Tests about panes ignore the first-pass name bookkeeping.
+const paneOps = (ops) => ops.filter((op) => op.type !== 'recordName');
 
 test('parseAppLs keeps local spaces, tabs and valid addresses', () => {
   const spaces = parseAppLs(appJson([
@@ -43,7 +45,7 @@ test('parseTui strips the [n] prefix from labels', () => {
   });
   assert.equal(view.workspaces.get('w1'), 'skills (private)');
   assert.deepEqual(view.tabs.get('w1:t1'), { label: 'node', workspaceId: 'w1' });
-  assert.deepEqual(view.panes.get('w1:p1'), { tabId: 'w1:t1', workspaceId: 'w1' });
+  assert.deepEqual(view.panes.get('w1:p1'), { tabId: 'w1:t1', workspaceId: 'w1', title: '' });
   assert.equal(stripNumber(undefined), '');
 });
 
@@ -59,7 +61,79 @@ test('planSync is idempotent when the mapping matches the TUI', () => {
   const spaces = parseAppLs(appJson([space('spA', 'repo', [tab('tb1', '1', ['t1'])])]));
   const state = { spaces: { spA: 'w1' }, tabs: { tb1: { tuiTabId: 'w1:t1', spaceId: 'spA' } }, panes: { t1: { paneId: 'w1:p1', tabId: 'tb1' } } };
   const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: '1', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
+  // First pass records the names both sides agree on, then nothing is left to do.
+  const ops = planSync(spaces, tui, state);
+  assert.deepEqual(ops, [{ type: 'recordName', key: 'space:spA', name: 'repo' }, { type: 'recordName', key: 'tab:tb1', name: '' }]);
+  state.names = { 'space:spA': 'repo', 'tab:tb1': '' };
   assert.deepEqual(planSync(spaces, tui, state), []);
+});
+
+test('nameDirection: app renames win, TUI renames go to the app, TUI-born names go first', () => {
+  assert.equal(nameDirection('a', 'a', 'a'), null);
+  assert.equal(nameDirection(undefined, 'a', 'a'), 'record');
+  assert.equal(nameDirection('a', 'b', 'a'), 'toTui');
+  assert.equal(nameDirection('a', 'a', 'b'), 'toApp');
+  assert.equal(nameDirection('a', 'b', 'c'), 'toTui');
+  assert.equal(nameDirection(undefined, 'b', 'c'), 'toTui');
+  assert.equal(nameDirection(null, 'derived', 'repo'), 'toApp');
+  assert.equal(nameDirection(null, 'x', ''), null);
+  // An unnamed app tab takes a TUI rename; a label already recorded is not sent again.
+  assert.equal(nameDirection('', '', 'build'), 'toApp');
+  assert.equal(nameDirection('node', '', 'node'), null);
+  assert.equal(nameDirection('node', 'x', 'node'), 'toTui');
+  assert.equal(nameDirection('a', 'a', ''), 'toTui');
+});
+
+test('isAutoTabLabel spots labels herdr made from the running program', () => {
+  assert.equal(isAutoTabLabel('hc', {}), true);
+  assert.equal(isAutoTabLabel('opencode', { processNames: ['/usr/bin/opencode'] }), true);
+  assert.equal(isAutoTabLabel('OC | plan', { titles: ['OC | plan'] }), true);
+  assert.equal(isAutoTabLabel('build', { processNames: ['-zsh'], titles: ['~/repo'] }), false);
+});
+
+test('planSync treats a numbered app tab as unnamed: no TUI rename; the TUI label is offered back', () => {
+  const spaces = parseAppLs(appJson([space('spA', 'repo', [tab('tb1', '2', ['t1', 't2'])])]));
+  const state = {
+    spaces: { spA: 'w1' }, tabs: { tb1: { tuiTabId: 'w1:t1', spaceId: 'spA' } },
+    panes: { t1: { paneId: 'w1:p1', tabId: 'tb1' } }, names: { 'space:spA': 'repo', 'tab:tb1': '' },
+  };
+  const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: 'node', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
+  // The executor drops 'node' as an automatic label (isAutoTabLabel).
+  assert.deepEqual(types(planSync(spaces, tui, state)), ['renameAppTab', 'openPane']);
+  const fresh = planSync(spaces, tuiView({ workspaces: { w1: 'repo' } }), { spaces: { spA: 'w1' }, names: { 'space:spA': 'repo' } });
+  assert.equal(fresh.find((op) => op.type === 'createTab').name, '');
+  const numbered = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: '1', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
+  assert.deepEqual(types(planSync(spaces, numbered, state)), ['openPane']);
+});
+
+test('planSync names a TUI-born space and tab in the app after the TUI', () => {
+  const spaces = parseAppLs(appJson([space('spN', '~', [tab('tbN', '', ['t5'])])]));
+  const state = {
+    spaces: { spN: 'w1' }, tabs: { tbN: { tuiTabId: 'w1:t1', spaceId: 'spN' } },
+    panes: { t5: { paneId: 'w1:p1', tabId: 'tbN' } }, names: { 'space:spN': null, 'tab:tbN': null },
+  };
+  const tui = tuiView({ workspaces: { w1: 'skills' }, tabs: { 'w1:t1': { label: 'build', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
+  assert.deepEqual(planSync(spaces, tui, state), [
+    { type: 'renameAppSpace', spaceId: 'spN', workspaceId: 'w1', name: 'skills' },
+    { type: 'renameAppTab', tabId: 'tbN', tuiTabId: 'w1:t1', name: 'build' },
+  ]);
+});
+
+test('placeForPane reuses the mapping, else makes ids the TUI names first', () => {
+  const state = normalizeState({ spaces: { spA: 'w1' }, tabs: { tb1: { tuiTabId: 'w1:t1', spaceId: 'spA' } } });
+  const mapped = placeForPane(state, { workspaceId: 'w1', tuiTabId: 'w1:t1', cwd: '/r', shell: '/bin/zsh' });
+  assert.deepEqual([mapped.spaceId, mapped.tabId], ['spA', 'tb1']);
+  assert.deepEqual(state.names, {});
+  const newId = (prefix) => `${prefix}New`;
+  const newTab = placeForPane(state, { workspaceId: 'w1', tuiTabId: 'w1:t2', cwd: '/r', newId });
+  assert.deepEqual([newTab.spaceId, newTab.tabId], ['spA', 'tbNew']);
+  assert.deepEqual(state.tabs.tbNew, { tuiTabId: 'w1:t2', spaceId: 'spA' });
+  assert.deepEqual(state.names, { 'tab:tbNew': null });
+  const newSpace = placeForPane(state, { workspaceId: 'w2', tuiTabId: 'w2:t1', cwd: '/r', newId: (p) => `${p}Two` });
+  assert.deepEqual([newSpace.spaceId, newSpace.tabId], ['spTwo', 'tbTwo']);
+  assert.equal(state.spaces.spTwo, 'w2');
+  assert.equal(state.names['space:spTwo'], null);
+  assert.ok(newSpace.argv.includes('herdr.space=spTwo'));
 });
 
 test('planSync adds a pane for a new terminal in a mapped tab, and renames', () => {
@@ -80,7 +154,7 @@ test('planSync closes the pane of an ended terminal and forgets one already gone
     t2: { paneId: 'w1:p2', tabId: 'tb1' },
   } };
   const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: '1', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
-  const ops = planSync(spaces, tui, state);
+  const ops = paneOps(planSync(spaces, tui, state));
   assert.deepEqual(ops, [{ type: 'closePane', terminal: 't1', paneId: 'w1:p1' }, { type: 'forget', terminal: 't2' }]);
 });
 
@@ -91,8 +165,8 @@ test('planSync asks once when the user closed a synced pane while others stay', 
     t2: { paneId: 'w1:p2', tabId: 'tb1' },
   } };
   const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: '1', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
-  assert.deepEqual(planSync(spaces, tui, state), [{ type: 'ask', terminals: ['t2'] }]);
-  assert.deepEqual(planSync(spaces, tui, { ...state, asked: { t2: 1 } }), []);
+  assert.deepEqual(paneOps(planSync(spaces, tui, state)), [{ type: 'ask', terminals: ['t2'] }]);
+  assert.deepEqual(paneOps(planSync(spaces, tui, { ...state, asked: { t2: 1 } })), []);
 });
 
 test('planSync reopens without asking when every synced pane vanished (TUI restart)', () => {
@@ -116,7 +190,7 @@ test('planSync skips spaces and tabs without terminals', () => {
 
 test('planSync opens a new tab in a mapped workspace', () => {
   const spaces = parseAppLs(appJson([space('spA', 'repo', [tab('tb2', '2', ['t5'])])]));
-  const ops = planSync(spaces, tuiView({ workspaces: { w1: 'repo' } }), { spaces: { spA: 'w1' } });
+  const ops = paneOps(planSync(spaces, tuiView({ workspaces: { w1: 'repo' } }), { spaces: { spA: 'w1' } }));
   assert.deepEqual(types(ops), ['createTab', 'openPane']);
 });
 
@@ -135,5 +209,5 @@ test('syncedRunArgv labels a kept shell for the app', () => {
 });
 
 test('normalizeState fills missing keys and drops bad ones', () => {
-  assert.deepEqual(normalizeState({ panes: [], spaces: { a: 'w' } }), { spaces: { a: 'w' }, tabs: {}, panes: {}, detached: {}, asked: {} });
+  assert.deepEqual(normalizeState({ panes: [], spaces: { a: 'w' } }), { spaces: { a: 'w' }, tabs: {}, panes: {}, detached: {}, asked: {}, names: {} });
 });

@@ -6,6 +6,7 @@
 const { attachArgv, filterTerminals, liveTerminals, needsConfirm, paneTitle } = require('../lib/hc');
 const { listTerminals } = require('../lib/hc-cli');
 const { runHerdr, findPaneId } = require('../lib/herdr');
+const { PLAIN_ENV } = require('../lib/sync-run');
 
 const mode = process.env.HC_MODE || 'attach';
 const originPane = process.env.HC_ORIGIN_PANE || '';
@@ -65,7 +66,7 @@ function showMessage(text) {
 // Splits origin pane right, runs `hc attach`, and names the new pane.
 function openSplit(terminal, { observe }) {
   const argv = attachArgv(terminal.address, { observe });
-  const split = runHerdr(['pane', 'split', originPane, '--direction', 'right', ...(terminal.cwd ? ['--cwd', terminal.cwd] : [])]);
+  const split = runHerdr(['pane', 'split', originPane, '--direction', 'right', ...(terminal.cwd ? ['--cwd', terminal.cwd] : []), ...PLAIN_ENV]);
   const paneId = findPaneId(split);
   if (!paneId) {
     throw new Error('herdr pane split returned no pane id');
@@ -77,7 +78,7 @@ function openSplit(terminal, { observe }) {
 
 // Opens every live terminal in one new tab. Each new pane splits the previous one, alternating right and down.
 function openAll(terminals) {
-  const tab = runHerdr(['tab', 'create', '--label', 'hc attach', '--focus']);
+  const tab = runHerdr(['tab', 'create', '--label', 'hc attach', '--focus', ...PLAIN_ENV]);
   let previous = findPaneId(tab);
   if (!previous) {
     throw new Error('herdr tab create returned no pane id');
@@ -87,7 +88,7 @@ function openAll(terminals) {
     let paneId = previous;
     if (i > 0) {
       const direction = i % 2 ? 'right' : 'down';
-      const split = runHerdr(['pane', 'split', previous, '--direction', direction, ...(terminal.cwd ? ['--cwd', terminal.cwd] : [])]);
+      const split = runHerdr(['pane', 'split', previous, '--direction', direction, ...(terminal.cwd ? ['--cwd', terminal.cwd] : []), ...PLAIN_ENV]);
       paneId = findPaneId(split);
       if (!paneId) {
         throw new Error('herdr pane split returned no pane id');

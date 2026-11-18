@@ -4,7 +4,7 @@
 # takes the pid file itself, so two racing starts leave one watcher.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIR="${HERDR_PLUGIN_STATE_DIR:-$HOME/.config/herdr/plugins/state/barnuri.hc-attach}"
+DIR="${HERDR_PLUGIN_STATE_DIR:-$HOME/.local/state/herdr/plugins/barnuri.hc-attach}"
 pid="$(cat "$DIR/sync.pid" 2>/dev/null)"
 case "$pid" in ''|*[!0-9]*) ;; *) kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= | grep -qF "$ROOT/bin/sync.js" && exit 0 ;; esac
 mkdir -p "$DIR" || exit 0

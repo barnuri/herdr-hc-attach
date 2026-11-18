@@ -42,7 +42,7 @@ What it does:
 | `hc: new synced terminal` | the terminal shows in the synced space and tab |
 | you close a synced pane | a popup asks: `k` ends the terminal (the app pane goes too), `r` opens the pane again, `d`/Esc keeps it in the app only (not reopened until it ends) |
 
-The mapping (app space → TUI workspace, app tab → TUI tab, terminal → pane) is kept in `sync-state.json` in the plugin state dir (`$HERDR_PLUGIN_STATE_DIR`, else `~/.config/herdr/plugins/state/barnuri.hc-attach/`), under a lock shared with the actions. A restart never opens a pane twice. When every synced pane is gone at once (the TUI server restarted), the watcher opens them again without asking.
+The mapping (app space → TUI workspace, app tab → TUI tab, terminal → pane) is kept in `sync-state.json` in the plugin state dir (`$HERDR_PLUGIN_STATE_DIR`, else `~/.local/state/herdr/plugins/barnuri.hc-attach/`, where herdr puts it), under a lock shared with the actions. A restart never opens a pane twice. When every synced pane is gone at once (the TUI server restarted), the watcher opens them again without asking.
 
 Check what one pass would do, without changing anything:
 

@@ -67,7 +67,19 @@ function main() {
     return;
   }
   const interval = Number.parseInt(process.env.HC_SYNC_MS, 10) || DEFAULT_INTERVAL_MS;
+  const pidFile = path.join(stateDir(), PID_FILE);
   const tick = () => {
+    // A newer watcher took over (or the pid file is gone): leave, so two never run.
+    let holder = '';
+    try {
+      holder = fs.readFileSync(pidFile, 'utf8');
+    } catch {
+      // missing: treated as lost
+    }
+    if (holder !== String(process.pid)) {
+      log('pid file no longer ours; exiting');
+      process.exit(0);
+    }
     try {
       for (const op of pass(false)) log(JSON.stringify(op));
     } catch (error) {

@@ -1,0 +1,28 @@
+#!/bin/sh
+# herdr TUI default shell (config.toml: [terminal] default_shell = "<this file>").
+# A new interactive TUI pane becomes `hc attach` on a new hc terminal, so the herdr
+# app shows it too. Panes the plugin opens itself (HC_SYNC_PLAIN=1), commands
+# (`-c ...`) and any failure get the plain shell.
+
+self="${0#-}"
+real="${HC_REAL_SHELL:-$SHELL}"
+case "$real" in "" | "$self" | */hc-shell) real=/bin/zsh ;; esac
+[ -x "$real" ] || real=/bin/sh
+
+plain() {
+  case "$0" in -*) exec "$real" -l "$@" ;; esac
+  exec "$real" "$@"
+}
+
+for arg in "$@"; do
+  case "$arg" in -l | -i | --login) ;; *) plain "$@" ;; esac
+done
+[ -z "$HC_SYNC_PLAIN" ] && [ -n "$HERDR_PANE_ID" ] || plain "$@"
+command -v hc >/dev/null 2>&1 && command -v node >/dev/null 2>&1 || plain "$@"
+
+root="$(cd "$(dirname "$self")/.." && pwd)"
+dir="${HERDR_PLUGIN_STATE_DIR:-$HOME/.local/state/herdr/plugins/barnuri.hc-attach}"
+mkdir -p "$dir" 2>/dev/null
+log="$dir/hc-shell.log"
+address="$(HC_REAL_SHELL="$real" node "$root/bin/shell-hook.js" 2>>"$log")" && [ -n "$address" ] || plain "$@"
+exec hc attach "$address"
