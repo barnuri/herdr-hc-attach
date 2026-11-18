@@ -40,7 +40,7 @@ function main() {
     if (restored) return restored;
     const { tabId, argv } = placeForPane(state, { ...where, cwd, shell: process.env.HC_REAL_SHELL });
     const started = startTerminal(argv, { timeout: HC_TIMEOUT_MS });
-    state.panes[started] = { paneId, tabId };
+    state.panes[started] = { paneId, tabId, recordedAt: Date.now() };
     return started;
   });
   try {

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { appPlaceFor, isAutoTabLabel, nameDirection, placeForPane, normalizeState, parseAppLs, parseTui, planSync, stripNumber, syncedRunArgv } = require('../lib/sync');
+const { appPlaceFor, holdPane, isAutoTabLabel, nameDirection, placeForPane, normalizeState, parseAppLs, parseTui, planSync, stripNumber, syncedRunArgv } = require('../lib/sync');
 
 const appJson = (spaces) => JSON.stringify({ spaces, recent: [] });
 const space = (id, name, tabs, machine = null) => ({ id, name, folder: '/tmp', machine, tabs });
@@ -210,4 +210,31 @@ test('syncedRunArgv labels a kept shell for the app', () => {
 
 test('normalizeState fills missing keys and drops bad ones', () => {
   assert.deepEqual(normalizeState({ panes: [], spaces: { a: 'w' } }), { spaces: { a: 'w' }, tabs: {}, panes: {}, detached: {}, asked: {}, names: {} });
+});
+
+test('holdPane keeps a pane whose terminal hc still lists as live', () => {
+  assert.equal(holdPane('t1', { paneId: 'w1:p1' }, { liveTerminals: new Set(['t1']) }), true);
+  assert.equal(holdPane('t1', { paneId: 'w1:p1' }, { liveTerminals: new Set(['t2']) }), false);
+});
+
+test('holdPane keeps a pane recorded at or after the app snapshot', () => {
+  assert.equal(holdPane('t1', { paneId: 'w1:p1', recordedAt: 200 }, { snapshotAt: 100 }), true);
+  assert.equal(holdPane('t1', { paneId: 'w1:p1', recordedAt: 100 }, { snapshotAt: 100 }), true);
+  assert.equal(holdPane('t1', { paneId: 'w1:p1', recordedAt: 50 }, { snapshotAt: 100 }), false);
+  assert.equal(holdPane('t1', { paneId: 'w1:p1' }, { snapshotAt: 100 }), false);
+  assert.equal(holdPane('t1', { paneId: 'w1:p1', recordedAt: 200 }, {}), false);
+});
+
+test('planSync does not close the pane of a terminal the stale app snapshot misses', () => {
+  const spaces = parseAppLs(appJson([space('spA', 'repo', [tab('tb1', '1', [])])]));
+  const state = { spaces: { spA: 'w1' }, tabs: { tb1: { tuiTabId: 'w1:t1', spaceId: 'spA' } }, panes: {
+    t1: { paneId: 'w1:p1', tabId: 'tb1', recordedAt: 200 },
+    t2: { paneId: 'w1:p2', tabId: 'tb1' },
+    t3: { paneId: 'w1:p3', tabId: 'tb1', recordedAt: 10 },
+  } };
+  const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: '1', workspaceId: 'w1' } }, panes: {
+    'w1:p1': { tabId: 'w1:t1' }, 'w1:p2': { tabId: 'w1:t1' }, 'w1:p3': { tabId: 'w1:t1' },
+  } });
+  const ops = paneOps(planSync(spaces, tui, state, { snapshotAt: 100, liveTerminals: new Set(['t2']) }));
+  assert.deepEqual(ops, [{ type: 'closePane', terminal: 't3', paneId: 'w1:p3' }]);
 });

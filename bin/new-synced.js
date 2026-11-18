@@ -25,7 +25,7 @@ function main() {
     runHerdr(['pane', 'run', paneId, attachCommand(address)]);
     runHerdr(['pane', 'rename', paneId, `${address} (synced)`]);
 
-    state.panes[address] = { paneId, tabId };
+    state.panes[address] = { paneId, tabId, recordedAt: Date.now() };
   });
 }
 

@@ -70,7 +70,7 @@ function convertPane(pane, busy) {
       runHerdr(['pane', 'run', paneId, `exec ${attachCommand(address)}`]);
     }
     runHerdr(['pane', 'rename', paneId, `${address} (synced)`]);
-    state.panes[address] = { paneId, tabId };
+    state.panes[address] = { paneId, tabId, recordedAt: Date.now() };
   });
   if (busy) runHerdr(['pane', 'close', pane.paneId]);
 }
