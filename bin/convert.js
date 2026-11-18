@@ -6,11 +6,13 @@
 // space and tab mapped to its TUI workspace and tab, so the herdr app shows it.
 //   idle shell      the shell is replaced in place (`exec hc attach <t>`)
 //   busy (program)  only with `a` then `A`: a new pane takes its place, the old one
-//                   closes and its program ends
+//                   closes and its program ends. A known agent (opencode, claude,
+//                   codex) resumes its session in the new terminal; others get a shell.
+//   working/blocked agents need `a` then `W`
 //   plugin panes and panes already synced are never touched
 
 const { PLUGIN_ID, runHerdr, findPaneId } = require('../lib/herdr');
-const { classifyPane, paneCommand } = require('../lib/convert');
+const { classifyPane, paneCommand, planPane, shellArgv } = require('../lib/convert');
 const { placeForPane } = require('../lib/sync');
 const { PLAIN_ENV, attachCommand, loadState, readTui, startTerminal, withState } = require('../lib/sync-run');
 
@@ -30,7 +32,7 @@ function listCandidates() {
   const panes = runHerdr(['pane', 'list']).panes || [];
   const synced = new Set(Object.values(loadState().panes).map((entry) => entry.paneId));
   const self = process.env.HERDR_PANE_ID;
-  const result = { idle: [], busy: [], skipped: 0 };
+  const result = { idle: [], busy: [], active: [], skipped: 0 };
   for (const pane of panes) {
     if (pane.pane_id === self) continue;
     let info;
@@ -45,7 +47,9 @@ function listCandidates() {
       result.skipped += 1;
       continue;
     }
-    result[kind].push({
+    const plan = kind === 'busy' ? planPane(pane) : { resume: null, active: false };
+    result[plan.active ? 'active' : kind].push({
+      ...plan,
       paneId: pane.pane_id,
       workspaceId: pane.workspace_id,
       tuiTabId: pane.tab_id,
@@ -59,7 +63,8 @@ function listCandidates() {
 
 function convertPane(pane, busy) {
   withState((state) => {
-    const { tabId, argv } = placeForPane(state, { workspaceId: pane.workspaceId, tuiTabId: pane.tuiTabId, cwd: pane.cwd, shell: process.env.SHELL });
+    const shellArgs = shellArgv(process.env.SHELL, pane.resume);
+    const { tabId, argv } = placeForPane(state, { workspaceId: pane.workspaceId, tuiTabId: pane.tuiTabId, cwd: pane.cwd, shell: process.env.SHELL, shellArgs });
     const address = startTerminal(argv, { timeout: 10_000 });
     let paneId = pane.paneId;
     if (busy) {
@@ -75,13 +80,22 @@ function convertPane(pane, busy) {
   if (busy) runHerdr(['pane', 'close', pane.paneId]);
 }
 
+function describeBusy(pane) {
+  const after = pane.resume
+    ? `resumes ${pane.agent} session ${pane.sessionId}`
+    : `no resume${pane.agent ? ` for ${pane.agent}` : ''}: plain shell`;
+  return `  ${pane.paneId}  ${pane.where}  ${pane.command}\n      -> ${after}`;
+}
+
 function render(list, extra = '') {
   const out = ['\x1b[2J\x1b[H\x1b[1mConvert TUI panes to synced hc terminals\x1b[0m', ''];
   out.push('The herdr app shows synced panes. A converted pane starts a new shell in the same folder.', '');
   out.push(`Idle shells (y or a converts them): ${list.idle.length}`);
   for (const pane of list.idle) out.push(`  ${pane.paneId}  ${pane.where}  ${pane.cwd}`);
   out.push('', `Running a program (only a converts them, and the program ENDS): ${list.busy.length}`);
-  for (const pane of list.busy) out.push(`  ${pane.paneId}  ${pane.where}  ${pane.command}`);
+  for (const pane of list.busy) out.push(describeBusy(pane));
+  out.push('', `Agents working or blocked (only a then W converts them): ${list.active.length}`);
+  for (const pane of list.active) out.push(describeBusy(pane));
   out.push('', `Skipped (plugin panes, already synced): ${list.skipped}`, '');
   out.push('  y    convert the idle shells', '  a    convert all of the above', '  Esc  cancel');
   if (extra) out.push('', extra);
@@ -97,7 +111,7 @@ function runConversion(list, panes) {
   const failed = [];
   for (const pane of panes) {
     try {
-      convertPane(pane, list.busy.includes(pane));
+      convertPane(pane, !list.idle.includes(pane));
     } catch (error) {
       failed.push(`${pane.paneId}: ${error.message}`);
     }
@@ -116,11 +130,14 @@ function popup() {
   process.stdin.on('data', (key) => {
     if (key === '\x1b' || key === '\x03' || key === 'q') finish(0);
     if (key === 'y' && list.idle.length > 0) runConversion(list, list.idle);
-    else if (key === 'a' && list.busy.length > 0) {
+    else if (key === 'a' && list.busy.length + list.active.length > 0) {
       confirmAll = true;
-      render(list, `Press A (shift+a) to end ${list.busy.length} running program(s) and convert all. Any other key cancels.`);
+      const lines = [`Press A (shift+a) to end ${list.busy.length} running program(s) and convert them with the idle shells.`];
+      if (list.active.length > 0) lines.push(`Press W (shift+w) to also end ${list.active.length} working or blocked agent(s).`);
+      render(list, `${lines.join('\n')}\nAny other key cancels.`);
     } else if (key === 'a') runConversion(list, list.idle);
     else if (key === 'A' && confirmAll) runConversion(list, [...list.idle, ...list.busy]);
+    else if (key === 'W' && confirmAll && list.active.length > 0) runConversion(list, [...list.idle, ...list.busy, ...list.active]);
     else if (confirmAll) finish(0);
   });
   render(list);
