@@ -28,3 +28,24 @@ id = "attach-all"
 title = "hc: attach all"
 contexts = ["workspace", "pane"]
 command = ["node", "bin/open.js", "all"]
+
+[[actions]]
+id = "new-synced"
+title = "hc: new synced terminal (shows in the herdr app)"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/new-synced.js"]
+
+[[panes]]
+id = "confirm-close"
+title = "hc: synced panes closed"
+command = ["node", "bin/confirm-close.js"]
+placement = "popup"
+
+# Keeps TUI workspaces, tabs and panes in step with the herdr app's spaces, tabs and terminals.
+[[startup]]
+command = ["bash", "scripts/ensure-sync.sh"]
+
+# Heals a dead watcher on the next pane focus.
+[[events]]
+on = "pane.focused"
+command = ["bash", "scripts/ensure-sync.sh"]
