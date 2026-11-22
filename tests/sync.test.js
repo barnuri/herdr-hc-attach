@@ -102,15 +102,15 @@ test('isAutoTabLabel spots labels herdr made from the running program', () => {
   assert.equal(isAutoTabLabel('build', { processNames: ['-zsh'], titles: ['~/repo'] }), false);
 });
 
-test('planSync treats a numbered app tab as unnamed: no TUI rename; the TUI label is offered back', () => {
+test('planSync treats a numbered app tab as unnamed and an auto TUI label as no name: no rename either way', () => {
   const spaces = parseAppLs(appJson([space('spA', 'repo', [tab('tb1', '2', ['t1', 't2'])])]));
   const state = {
     spaces: { spA: 'w1' }, tabs: { tb1: { tuiTabId: 'w1:t1', spaceId: 'spA' } },
     panes: { t1: { paneId: 'w1:p1', tabId: 'tb1' } }, names: { 'space:spA': 'repo', 'tab:tb1': '' },
   };
   const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: 'node', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
-  // The executor drops 'node' as an automatic label (isAutoTabLabel).
-  assert.deepEqual(types(planSync(spaces, tui, state)), ['renameAppTab', 'openPane']);
+  // 'node' is an automatic label (isAutoTabLabel): no rename in either direction.
+  assert.deepEqual(types(planSync(spaces, tui, state)), ['openPane']);
   const fresh = planSync(spaces, tuiView({ workspaces: { w1: 'repo' } }), { spaces: { spA: 'w1' }, names: { 'space:spA': 'repo' } });
   assert.equal(fresh.find((op) => op.type === 'createTab').name, '');
   const numbered = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: '1', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
@@ -169,15 +169,23 @@ test('planSync closes the pane of an ended terminal and forgets one already gone
   assert.deepEqual(ops, [{ type: 'closePane', terminal: 't1', paneId: 'w1:p1' }, { type: 'forget', terminal: 't2' }]);
 });
 
-test('planSync asks once when the user closed a synced pane while others stay', () => {
+test('planSync reopens a closed synced pane while its terminal runs, without asking', () => {
   const spaces = parseAppLs(appJson([space('spA', 'repo', [tab('tb1', '1', ['t1', 't2'])])]));
   const state = { spaces: { spA: 'w1' }, tabs: { tb1: { tuiTabId: 'w1:t1', spaceId: 'spA' } }, panes: {
     t1: { paneId: 'w1:p1', tabId: 'tb1' },
     t2: { paneId: 'w1:p2', tabId: 'tb1' },
   } };
   const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: '1', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1' } } });
-  assert.deepEqual(paneOps(planSync(spaces, tui, state)), [{ type: 'ask', terminals: ['t2'] }]);
-  assert.deepEqual(paneOps(planSync(spaces, tui, { ...state, asked: { t2: 1 } })), []);
+  const ops = paneOps(planSync(spaces, tui, state));
+  assert.ok(ops.some((op) => op.type === 'reopen' && op.terminal === 't2'));
+  assert.ok(!ops.some((op) => op.type === 'ask'));
+});
+
+test('planSync leaves tab names alone when either side is an auto label', () => {
+  const spaces = parseAppLs(appJson([space('spA', 'repo', [tab('tb1', 'skills', ['t1'])])]));
+  const state = { spaces: { spA: 'w1' }, tabs: { tb1: { tuiTabId: 'w1:t1', spaceId: 'spA' } }, panes: { t1: { paneId: 'w1:p1', tabId: 'tb1' } } };
+  const tui = tuiView({ workspaces: { w1: 'repo' }, tabs: { 'w1:t1': { label: 'hc', workspaceId: 'w1' } }, panes: { 'w1:p1': { tabId: 'w1:t1', title: 'OC | model' } } });
+  assert.deepEqual(paneOps(planSync(spaces, tui, state)).filter((op) => op.type.startsWith('rename')), []);
 });
 
 test('planSync reopens without asking when every synced pane vanished (TUI restart)', () => {
