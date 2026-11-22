@@ -47,12 +47,6 @@ title = "hc: convert panes to synced"
 command = ["node", "bin/convert.js"]
 placement = "popup"
 
-[[panes]]
-id = "confirm-close"
-title = "hc: synced panes closed"
-command = ["node", "bin/confirm-close.js"]
-placement = "popup"
-
 # Keeps TUI workspaces, tabs and panes in step with the herdr app's spaces, tabs and terminals.
 [[startup]]
 command = ["bash", "scripts/ensure-sync.sh"]
